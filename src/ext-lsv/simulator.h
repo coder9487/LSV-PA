@@ -70,7 +70,7 @@ int Simulation(Abc_Ntk_t *pNtk, u_int64_t patterns)
     if(Abc_ObjType(IterateObj) != ABC_OBJ_NODE)
       continue;
     
-    int faninId[2] = {Abc_ObjId(Abc_ObjFanin0(IterateObj)), Abc_ObjId(Abc_ObjFanin1(IterateObj))};
+    unsigned int faninId[2] = {Abc_ObjId(Abc_ObjFanin0(IterateObj)), Abc_ObjId(Abc_ObjFanin1(IterateObj))};
     //printf("Fanin0 ID: %d, Fanin1 ID: %d\n",faninId[0],faninId[1]);
     int faninInv[2] = {Abc_ObjFaninC0(IterateObj), Abc_ObjFaninC1(IterateObj)};
     int faninVal[2] = {(simNodeArray[faninId[0]].nodeValue ^ faninInv[0]),(simNodeArray[faninId[1]].nodeValue ^ faninInv[1])};
@@ -132,7 +132,7 @@ int Simulation(Abc_Ntk_t *pNtk, u_int64_t patterns,int careNode, int *pCareValue
     if(Abc_ObjType(IterateObj) != ABC_OBJ_NODE)
       continue;
     
-    int faninId[2] = {Abc_ObjId(Abc_ObjFanin0(IterateObj)), Abc_ObjId(Abc_ObjFanin1(IterateObj))};
+    unsigned int faninId[2] = {Abc_ObjId(Abc_ObjFanin0(IterateObj)), Abc_ObjId(Abc_ObjFanin1(IterateObj))};
     //printf("Fanin0 ID: %d, Fanin1 ID: %d\n",faninId[0],faninId[1]);
     int faninInv[2] = {Abc_ObjFaninC0(IterateObj), Abc_ObjFaninC1(IterateObj)};
     int faninVal[2] = {(simNodeArray[faninId[0]].nodeValue ^ faninInv[0]),(simNodeArray[faninId[1]].nodeValue ^ faninInv[1])};

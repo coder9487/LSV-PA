@@ -1,0 +1,5 @@
+read_verilog -formal circuit_1.v
+prep -top top
+synth -flatten
+aigmap
+write_aiger circuit_1.aig

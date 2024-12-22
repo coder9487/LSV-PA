@@ -21,7 +21,7 @@ using namespace std;
 
 //# define READ_PIPO_GROUP
 
-#define LiftSize(x) ((x + 1)*1)
+#define LiftSize(x) ((x + 1)+1)
 
 extern "C"
 {
@@ -493,14 +493,14 @@ int vvWriteToSat(vector<vector<int>> * vvClause, sat_solver * sat)
 {
   for (size_t i = 0; i < vvClause->size(); ++i)
   {
-    vector<int> vClause ;
+    vector<int> vLitClause ;
     for (size_t j = 0; j < vvClause->at(i).size(); ++j)
     {
-      int lit = abs((vvClause->at(i).at(j)))*2;
+      int var = abs((vvClause->at(i).at(j)));
       int sign = vvClause->at(i).at(j) < 0 ? 1 : 0;
-      vClause.push_back(lit + sign);
+      vLitClause.push_back(Abc_Var2Lit(var,sign));
     }
-    if (!sat_solver_addclause(sat, vClause.data(), vClause.data()+vClause.size()))
+    if (!sat_solver_addclause(sat, vLitClause.data(), vLitClause.data()+vLitClause.size()))
     {
       
       return 0;
@@ -508,14 +508,14 @@ int vvWriteToSat(vector<vector<int>> * vvClause, sat_solver * sat)
   }
   return 1;
 }
-int vWriteToSat(vector<int> vClause, sat_solver * sat,int fBlockAns)
+int vWriteToSat(vector<int> vLitClause, sat_solver * sat,int fBlockAns)
 {
   vector<int> vClause_;
-  for (size_t i = 0; i < vClause.size(); ++i)
+  for (size_t i = 0; i < vLitClause.size(); ++i)
   {
-    int lit = abs((vClause.at(i)));
-    int sign = vClause.at(i) < 0 ? 1 : 0;
-    vClause_.push_back(toLitCond(lit,sign)^ fBlockAns);
+    int lit = abs((vLitClause.at(i)));
+    int sign = vLitClause.at(i) < 0 ? 1 : 0;
+    vClause_.push_back(Abc_Var2Lit(lit,sign)^ fBlockAns);
   }
   if (sat_solver_addclause(sat, vClause_.data(), vClause_.data()+vClause_.size()) != 1)
   {
@@ -523,7 +523,29 @@ int vWriteToSat(vector<int> vClause, sat_solver * sat,int fBlockAns)
   }
   return 1;
 }
+int vWriteToSat(vector<int> vVarClause,vector<int> vSign, sat_solver * sat,int fBlockAns)
+{
+  vector<int> vClause_;
+  for (size_t i = 0; i < vVarClause.size(); ++i)
+  {
 
+    vClause_.push_back(Abc_Var2Lit(vVarClause.at(i),vSign.at(i))^ fBlockAns);
+  }
+  if (sat_solver_addclause(sat, vClause_.data(), vClause_.data()+vClause_.size()) != 1)
+  {
+    return 0;
+  }
+  return 1;
+
+/*
+    lit vLit[3] = {
+      Abc_Var2Lit(1, vClause[1] ^ 0),
+      Abc_Var2Lit(2, vClause[2] ^ 0),
+      Abc_Var2Lit(3, vClause[3] ^ 0)};
+    addClauseState = sat_solver_addclause(pSat, vLit, vLit + 3);
+ */
+
+}
 
 vector<int>  getSatAnswer(sat_solver * sat,vector<int> *filter)
 {
@@ -534,7 +556,7 @@ vector<int>  getSatAnswer(sat_solver * sat,vector<int> *filter)
     int lit = filter->at(i);
     int sign = sat_solver_var_value(sat, lit);
     lit =  sign ? -lit : lit;
-    vecResult.push_back(lit);
+    vecResult.push_back(sign);
   }
   return vecResult;
 }
@@ -786,8 +808,9 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   sat_solver *pMatchingSat = sat_solver_new();
   
   pMatchingSat->verbosity = 2;
-  pMatchingSat->fPrintClause = 1;
+  pMatchingSat->fPrintClause = 0;
   int statueInt = 0;
+
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfCkt1, 1, 0);
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfCkt2, 1, 0);
   statueInt += vvWriteToSat(vvClausePi,pMatchingSat);
@@ -796,8 +819,7 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   statueInt += vvWriteToSat(&vvClausePoRule,pMatchingSat);
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfMiter, 1, 0);
   statueInt += sat_solver_add_const(pMatchingSat,miterOutLitId,0);
-
-  printf("Write Clause Status: %d\n",statueInt);
+  
 
   vector<int> routeTable1D;
   routeTable2Vec(pPiTable,&routeTable1D);
@@ -805,18 +827,18 @@ void Lsv_Ntk_BooleanMatching(int testCase)
 
   int satStatus = 1;
   int writeClauseStatus = 1;
-  
-  for (size_t i = 0; i < 5 && satStatus == 1 && writeClauseStatus == 1; ++i)
+  pMatchingSat->fPrintClause = 1;
+  for (size_t i = 0; i < 10 && satStatus == 1 && writeClauseStatus == 1; ++i)
   {
     satStatus = sat_solver_solve_internal(pMatchingSat);
     printf("SAT Status: %d\n",satStatus);
     vector<int> vecAns = getSatAnswer(pMatchingSat,&routeTable1D);
     for (size_t i = 0; i < vecAns.size(); ++i)
     {
-      printf("%d ",vecAns.at(i));
+      //printf("%d-->%d\n",routeTable1D.at(i),vecAns.at(i));
     }
     printf("\n");
-    writeClauseStatus = vWriteToSat(vecAns,pMatchingSat,0);
+    writeClauseStatus = vWriteToSat(routeTable1D,vecAns,pMatchingSat,0);
     printf("Write Clause Status: %d\n",writeClauseStatus);
     
     //Sat_SolverPrintStats(pMatchingSat);

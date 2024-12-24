@@ -3,7 +3,6 @@
 #include "base/main/mainInt.h"
 #include "sat/cnf/cnf.h"
 
-
 #include <map>
 #include <vector>
 #include <list>
@@ -13,15 +12,22 @@
 #include <string>
 #include "simulator.h"
 
-
 #define DUMP_BUS_GROUP_INFO 0
 #define READ_BLIFFILE 1
 
+
+
+#define METHOD2
+#define SAT_SOLVE_MAX_ITERATION_SIZE 99999999999
+#define ENABLE_LEARNING 1
+#define DISABLE_PARTIAL_ASSIGNMENT 0
+#define PRINT_INFO 0
+
 using namespace std;
 
-//# define READ_PIPO_GROUP
+// # define READ_PIPO_GROUP
 
-#define LiftSize(x) ((x + 1)+1)
+#define LiftSize(x) ((x + 1) + 1)
 
 extern "C"
 {
@@ -29,11 +35,8 @@ extern "C"
   Abc_Ntk_t *Io_ReadBlifAsAig(char *pFileName, int fCheck);
   Aig_Man_t *Abc_NtkToDar(Abc_Ntk_t *pNtk, int fExors, int fRegisters);
   Abc_Ntk_t *Abc_NtkDouble(Abc_Ntk_t *pNtk);
-  void Abc_NtkMiterPrepare( Abc_Ntk_t * pNtk1, Abc_Ntk_t * pNtk2, Abc_Ntk_t * pNtkMiter, int fComb, int nPartSize, int fMulti );
-  
+  void Abc_NtkMiterPrepare(Abc_Ntk_t *pNtk1, Abc_Ntk_t *pNtk2, Abc_Ntk_t *pNtkMiter, int fComb, int nPartSize, int fMulti);
 }
-
-
 
 static int Lsv_Command_BooleanMatching(Abc_Frame_t *pAbc, int argc, char **argv);
 
@@ -51,25 +54,8 @@ struct PackageRegistrationManager
   PackageRegistrationManager() { Abc_FrameAddInitializer(&frame_initializer_BooleanMatching); }
 } lsvPackageRegistrationManager_BooleanMatching;
 
-
-
-typedef struct LIT2OBJ
+void readBusGroup(char *filePath, vector<vector<string>> &busGroup1, vector<vector<string>> &busGroup2)
 {
-  int numPi;
-  int numPo;
-  vector<int> vec_piObjId;
-  vector<int> vec_piLitId;
-  vector<int> vec_poObjId;
-  vector<int> vec_poLitId;
-} Lit2Obj;
-
-
-
-
-
-void readBusGroup(char *filePath,  vector<vector<string >> &busGroup1, vector<vector<string >> &busGroup2)
-{
-
 
   char line[1024];
   FILE *file = fopen(filePath, "r");
@@ -78,34 +64,33 @@ void readBusGroup(char *filePath,  vector<vector<string >> &busGroup1, vector<ve
     perror("Error opening file");
     return;
   }
-  
 
   int lineCnt = 0;
   int circuitCnt = 0;
   int lineOffset = 9999;
   int groupCnt = 0;
   int elementCnt = 0;
-  
 
   while (fgets(line, sizeof(line), file))
   {
-    if (lineCnt == 0 || lineCnt == lineOffset + 1 );
+    if (lineCnt == 0 || lineCnt == lineOffset + 1)
+      ;
     else if (lineCnt == 1 || lineCnt == lineOffset + 1 + 1)
     {
-      //printf("Line: %s\n", line);
-      //printf("busNum: %d\n", busNum);
+      // printf("Line: %s\n", line);
+      // printf("busNum: %d\n", busNum);
       lineOffset = atoi(line) + 1;
       groupCnt = 0;
-      circuitCnt++;      
+      circuitCnt++;
     }
     else
     {
       elementCnt = 0;
       char *token = strtok(line, " \n");
-      
+
       {
-        //printf("\tGroup ele cnt %d\n", atoi(token));
-        if(circuitCnt == 1)
+        // printf("\tGroup ele cnt %d\n", atoi(token));
+        if (circuitCnt == 1)
           busGroup1.push_back(vector<string>());
         else
           busGroup2.push_back(vector<string>());
@@ -114,15 +99,14 @@ void readBusGroup(char *filePath,  vector<vector<string >> &busGroup1, vector<ve
 
       while (token != NULL)
       {
-        //printf("\t\tToken: %s\n", token);
-        if(elementCnt != 1)
+        // printf("\t\tToken: %s\n", token);
+        if (elementCnt != 1)
         {
-          if(circuitCnt == 1)
-            busGroup1[groupCnt].push_back (token);
+          if (circuitCnt == 1)
+            busGroup1[groupCnt].push_back(token);
           else
-            busGroup2[groupCnt].push_back (token);
+            busGroup2[groupCnt].push_back(token);
         }
-
 
         token = strtok(NULL, " \n");
         elementCnt++;
@@ -130,13 +114,9 @@ void readBusGroup(char *filePath,  vector<vector<string >> &busGroup1, vector<ve
       groupCnt++;
     }
     lineCnt++;
-
   }
 
   fclose(file);
-
-
-
 }
 void dumpBusGroup(vector<vector<string>> busGroup1)
 {
@@ -161,9 +141,8 @@ void dumpBusGroup(vector<vector<int>> busGroup1)
       printf("\t%d\n", busGroup1[i][j]);
     }
   }
-
 }
-void extracBusGroupVector(  vector<vector<string>> &InputStringVector,map<int,string> &OutputVector)
+void extracBusGroupVector(vector<vector<string>> &InputStringVector, map<int, string> &OutputVector)
 {
   int k = 0;
   for (size_t i = 0; i < InputStringVector.size(); ++i)
@@ -173,28 +152,27 @@ void extracBusGroupVector(  vector<vector<string>> &InputStringVector,map<int,st
       OutputVector[k] = InputStringVector[i][j];
       k++;
     }
-     
   }
 }
-void findPiPoNodeId(Abc_Ntk_t *pNtk, map<int,string> &lookupTable)
+void findPiPoNodeId(Abc_Ntk_t *pNtk, map<int, string> &lookupTable)
 {
   Abc_Obj_t *pObj;
   int i;
 
   Abc_NtkForEachPi(pNtk, pObj, i)
   {
-    char* nodeName = Abc_ObjName(pObj);
+    char *nodeName = Abc_ObjName(pObj);
     int nodeId = Abc_ObjId(pObj);
     lookupTable[nodeId] = nodeName;
   }
   Abc_NtkForEachPo(pNtk, pObj, i)
   {
-    char* nodeName = Abc_ObjName(pObj);
+    char *nodeName = Abc_ObjName(pObj);
     int nodeId = Abc_ObjId(pObj);
     lookupTable[nodeId] = nodeName;
   }
 }
-void matchBusIdName(map<int,string> loookupTable, vector<vector<int >> &busGroupId, vector<vector<string >> &busGroupName)
+void matchBusIdName(map<int, string> loookupTable, vector<vector<int>> &busGroupId, vector<vector<string>> &busGroupName)
 {
   for (size_t i = 0; i < busGroupName.size(); ++i)
   {
@@ -212,24 +190,21 @@ void matchBusIdName(map<int,string> loookupTable, vector<vector<int >> &busGroup
     }
   }
 }
-void renameObj(Abc_Ntk_t *pNtk,char * circuitName)
+void renameObj(Abc_Ntk_t *pNtk, char *circuitName)
 {
   Abc_Obj_t *pObj;
   int i;
   Abc_NtkForEachObj(pNtk, pObj, i)
   {
 
-    char* nodeName = Abc_ObjName(pObj);
-    char newName [64];
-    sprintf(newName, "%s_%s",circuitName, nodeName);
-    
-    printf("Old obj Name: %s ID: %d \t",Abc_ObjName(pObj),Abc_ObjId(pObj));
+    char *nodeName = Abc_ObjName(pObj);
+    char newName[64];
+    sprintf(newName, "%s_%s", circuitName, nodeName);
+
+    printf("Old obj Name: %s ID: %d \t", Abc_ObjName(pObj), Abc_ObjId(pObj));
     Abc_ObjAssignName(pObj, newName, NULL);
-    printf("New obj Name: %s ID: %d\n",Abc_ObjName(pObj),Abc_ObjId(pObj));
-
-    
+    printf("New obj Name: %s ID: %d\n", Abc_ObjName(pObj), Abc_ObjId(pObj));
   }
-
 }
 void PrintObjName(Abc_Ntk_t *pNtk)
 {
@@ -237,14 +212,25 @@ void PrintObjName(Abc_Ntk_t *pNtk)
   int i;
   Abc_NtkForEachObj(pNtk, pObj, i)
   {
-    printf("Obj name: %s \t id:%d\n",Abc_ObjName(pObj),Abc_ObjId(pObj));
+    printf("Obj name: %s \t id:%d\n", Abc_ObjName(pObj), Abc_ObjId(pObj));
   }
 }
 
-
-
-
 //* Boolean matching */
+
+
+
+typedef struct LIT2OBJ
+{
+  int numPi;
+  int numPo;
+  vector<int> vec_piObjId;
+  vector<int> vec_piLitId;
+  vector<int> vec_poObjId;
+  vector<int> vec_poLitId;
+  vector<int> vec_poLitInv;
+} Lit2Obj;
+
 typedef struct RouteTable_t
 {
   int **ppTable;
@@ -254,24 +240,192 @@ typedef struct RouteTable_t
   int nCol;
 } RouteTable;
 
-void printRouteTable(RouteTable * s, int row, int col) 
+typedef struct supportNode_t
 {
-  for (int i = 0; i < row; i++) {
-    for (int j = 0; j < col; j++) {
-      printf("%d ", s->ppTable[i][j]);
+  int headObjId;
+  int headCnfId;
+  int nSupportSize;
+  vector<int> vSupportObjId;
+  vector<int> vSupportCnfId;
+
+  int headCnfValue;
+  vector<int> vSupportCnfValue;
+
+  // Just for convenience to store the value of the support node
+
+} supportNode;
+
+
+int getSupportNum(Abc_Ntk_t *pNtk, Abc_Obj_t *pObj){
+  Abc_Obj_t **vPObj = new Abc_Obj_t*[1];
+  vPObj = &pObj;
+  Vec_Ptr_t *vPSupportObj ;
+  vPSupportObj = Abc_NtkNodeSupport(pNtk,vPObj,1);
+  int supportNum = Vec_PtrSize(vPSupportObj);
+  Vec_PtrFree(vPSupportObj);
+  return supportNum;
+
+}
+
+std::vector<simNode>  simulation_vsimNode(Abc_Ntk_t *pNtk, u_int64_t patterns)
+{
+  if(!Abc_NtkIsStrash(pNtk))
+    pNtk = Abc_NtkStrash(pNtk, 0, 0, 0);
+  
+  int nodeNumber = Abc_NtkObjNum(pNtk);
+  //printf("Node Number: %d\n",nodeNumber);
+  std::vector<simNode> simNodeArray(nodeNumber+1);
+  Abc_Obj_t *IterateObj;
+  int obj_ite_num = 0;
+
+
+  Abc_NtkForEachObj(pNtk, IterateObj, obj_ite_num)
+  {
+    int nodeId = Abc_ObjId(IterateObj);
+    simNodeArray[nodeId].nodeValue = 2;
+    //printf("Node ID: %d Node type: %d\n",nodeId,Abc_ObjType(IterateObj));
+    if(Abc_ObjType(IterateObj) == ABC_OBJ_PI)
+    {
+      int shiftDigit = nodeId - 1;
+      bool boolNodeValue = (patterns & (1 << shiftDigit))>>shiftDigit;
+      simNodeArray[nodeId].nodeValue = boolNodeValue;
+      //printf("\t Node value: %d\n",simNodeArray[nodeId].nodeValue ); 
     }
+    if(Abc_ObjType(IterateObj) != ABC_OBJ_NODE)
+      continue;
+    
+    unsigned int faninId[2] = {Abc_ObjId(Abc_ObjFanin0(IterateObj)), Abc_ObjId(Abc_ObjFanin1(IterateObj))};
+    //printf("Fanin0 ID: %d, Fanin1 ID: %d\n",faninId[0],faninId[1]);
+    int faninInv[2] = {Abc_ObjFaninC0(IterateObj), Abc_ObjFaninC1(IterateObj)};
+    int faninVal[2] = {(simNodeArray[faninId[0]].nodeValue ^ faninInv[0]),(simNodeArray[faninId[1]].nodeValue ^ faninInv[1])};
+    simNodeArray[nodeId].nodeValue = faninVal[0] & faninVal[1];
+
+    
+  }
+
+  int PoCntIndex = 0;
+  int outputSum = 0;
+  Abc_NtkForEachPo(pNtk, IterateObj, obj_ite_num)
+  {
+
+    int nodeId = Abc_ObjId(IterateObj);
+    //printf("Po id :%d",nodeId); 
+    int faninId = Abc_ObjId(Abc_ObjFanin0(IterateObj));
+    int faninInv = Abc_ObjFaninC0(IterateObj);
+    int faninVal = simNodeArray[faninId].nodeValue ^ faninInv;
+    simNodeArray[nodeId].nodeValue = faninVal;
+    //printf("Po id :%d, Po value: %d\n",nodeId,faninVal);
+    outputSum += faninVal<<PoCntIndex++;
+    
+  }
+return simNodeArray;
+}
+
+void partialAssigment(Abc_Ntk_t * pNtk,Abc_Obj_t * pObj,std::vector<simNode>  &vecSimNode,std::vector<int> * partialSetObjId)
+{
+  int nodeId = Abc_ObjId(pObj);
+  //printf("@ ID: %d\n", nodeId);
+  if(vecSimNode[nodeId].traversed == 1)
+  {
+    //printf("Node ID: %d is already traversed\n", nodeId);
+    return;
+  }
+  if(Abc_ObjIsPi(pObj))
+  {
+
+    partialSetObjId->push_back(nodeId); 
+    return;
+  }
+  else{
+    vecSimNode[nodeId].traversed = 1;
+    int nodeValue = vecSimNode[nodeId].nodeValue;
+    int fanin0Value = vecSimNode[Abc_ObjId(Abc_ObjFanin0(pObj)) ].nodeValue ^ Abc_ObjFaninC0(pObj);
+    int fanin1Value = 2;
+    if(!Abc_ObjIsPo(pObj))
+      fanin1Value = vecSimNode[Abc_ObjId(Abc_ObjFanin1(pObj)) ].nodeValue ^ Abc_ObjFaninC1(pObj);
+    int fanin0SupportNum = getSupportNum(pNtk,Abc_ObjFanin0(pObj));
+    int fanin1SupportNum = fanin0SupportNum + 100;
+    if(!Abc_ObjIsPo(pObj))
+      fanin1SupportNum = getSupportNum(pNtk,Abc_ObjFanin1(pObj));
+    int fanin0Control = nodeValue == 1 && fanin0Value == 1;
+    int fanin1Control = 2;
+    if(!Abc_ObjIsPo(pObj))
+      fanin1Control = nodeValue == 1 && fanin1Value == 1;
+/*
+    printf("fanin0Value: %d ^ %d => %d\n",vecSimNode[Abc_ObjId(Abc_ObjFanin0(pObj)) ].nodeValue,Abc_ObjFaninC0(pObj), fanin0Value);
+    if(!Abc_ObjIsPo(pObj))
+      printf("fanin1Value: %d ^ %d => %d\n",vecSimNode[Abc_ObjId(Abc_ObjFanin1(pObj)) ].nodeValue,Abc_ObjFaninC1(pObj), fanin1Value);
     printf("\n");
+
+
+
+*/
+    if(Abc_ObjIsPo(pObj))
+    {
+      partialAssigment(pNtk,Abc_ObjFanin0(pObj),vecSimNode,partialSetObjId);
+    }
+    else if(nodeValue == 0 && fanin0Control == 0 && fanin1Control == 0)
+    {
+      if(fanin0SupportNum > fanin1SupportNum)
+        partialAssigment(pNtk,Abc_ObjFanin1(pObj),vecSimNode,partialSetObjId);
+      else
+        partialAssigment(pNtk,Abc_ObjFanin0(pObj),vecSimNode,partialSetObjId);
+
+    }
+    else if(nodeValue == 0 && fanin0Control == 0)
+    {
+        partialAssigment(pNtk,Abc_ObjFanin0(pObj),vecSimNode,partialSetObjId);
+
+    }
+    else if(nodeValue == 0 && fanin1Control == 0)
+    {
+        partialAssigment(pNtk,Abc_ObjFanin1(pObj),vecSimNode,partialSetObjId);
+    }
+    else if(nodeValue == 1 && fanin0Control == 1 && fanin1Control == 1)
+    {
+        partialAssigment(pNtk,Abc_ObjFanin0(pObj),vecSimNode,partialSetObjId);
+        partialAssigment(pNtk,Abc_ObjFanin1(pObj),vecSimNode,partialSetObjId);
+    }
+    else
+    {
+
+        printf("Out of condition!!!!!!!!!!!!!!!!!!!!!!!!\n");   
+
+
+    }
   }
 }
 
+vector<int>  vecBlockAns(vector<int> * vecAns){
+  vector<int>  vecBlockAns;
+  for (int i = 0; i < vecAns->size(); i++)
+  {
+    vecBlockAns.push_back(-vecAns->at(i));
+  }
+  return vecBlockAns;
+}
 
-int vvClauseaddClause(vector<vector<int>> * vvClause, vector<int> vClause)
+void printRouteTable(RouteTable *s, int row, int col)
+{
+  printf("========================================================================\n");
+  for (int i = 0; i < row; i++)
+  {
+    for (int j = 0; j < col; j++)
+    {
+      printf("%4d ", s->ppTable[i][j]);
+    }
+    printf("\n");
+  }
+  printf("========================================================================\n");
+}
+
+int vvClauseaddClause(vector<vector<int>> *vvClause, vector<int> vClause)
 {
   vvClause->push_back(vClause);
   return 0;
 }
 
-void vvPrint(vector<vector<int>> * vvClause)
+void vvPrint(vector<vector<int>> *vvClause)
 {
   for (size_t i = 0; i < vvClause->size(); ++i)
   {
@@ -284,33 +438,31 @@ void vvPrint(vector<vector<int>> * vvClause)
   return;
 }
 
-void createRouteTableRule(RouteTable_t * pTable,vector<vector<int>> * vvConstraint1)
+void createRouteTableRule(RouteTable_t *pTable, vector<vector<int>> *vvConstraint1)
 {
-  
 
-  for (int i = 0; i < pTable->nCol;i += 2 )
+  for (int i = 0; i < pTable->nCol; i += 2)
   {
     vector<int> vvSubArray;
-    for (int j = 0; j < pTable->nRow;j++)
+    for (int j = 0; j < pTable->nRow; j++)
     {
       vvSubArray.push_back(pTable->ppTable[j][i]);
-      vvSubArray.push_back(pTable->ppTable[j][i+1]);
+      vvSubArray.push_back(pTable->ppTable[j][i + 1]);
     }
     vvConstraint1->push_back(vvSubArray);
   }
-  for (int i = 0; i < pTable->nRow;i++)
+  for (int i = 0; i < pTable->nRow; i++)
   {
     vector<int> vvSubArray;
-    for (int j = 0; j < pTable->nCol;j++)
+    for (int j = 0; j < pTable->nCol; j++)
     {
       vvSubArray.push_back(pTable->ppTable[i][j]);
     }
     vvConstraint1->push_back(vvSubArray);
   }
-
 }
 
-void routeTable2Vec(RouteTable_t * pTable,vector<int> * vvConstraint1)
+void routeTable2Vec(RouteTable_t *pTable, vector<int> *vvConstraint1)
 {
   for (int i = 0; i < pTable->nRow; ++i)
   {
@@ -319,80 +471,74 @@ void routeTable2Vec(RouteTable_t * pTable,vector<int> * vvConstraint1)
     {
       vvConstraint1->push_back(pTable->ppTable[i][j]);
     }
-    
   }
 }
 
-void converRouteTable2Clauses(vector<vector<int>> * vvConstraint1,vector<vector<int>>* vvClause){
+void converRouteTable2Clauses(vector<vector<int>> *vvConstraint1, vector<vector<int>> *vvClause)
+{
   for (size_t i = 0; i < vvConstraint1->size(); ++i)
   {
     vector<int> vLine = vvConstraint1->at(i);
-    vvClauseaddClause(vvClause,vLine);
+    vvClauseaddClause(vvClause, vLine);
     for (size_t base_index = 0; base_index < vLine.size(); base_index++)
     {
-      
-      for(size_t move_index = base_index+1; move_index < vLine.size(); move_index++)
+
+      for (size_t move_index = base_index + 1; move_index < vLine.size(); move_index++)
       {
         vector<int> vClause;
         vClause.push_back(-vLine[base_index]);
         vClause.push_back(-vLine[move_index]);
-        vvClauseaddClause(vvClause,vClause);
-        //for (int val : vClause) printf("%d ", val);printf("\n");
+        vvClauseaddClause(vvClause, vClause);
+        // for (int val : vClause) printf("%d ", val);printf("\n");
       }
     }
-    //printf("\n");
+    // printf("\n");
   }
-
 }
 
-vector<vector<int>> * createRouteTable(RouteTable_t * pTable, int litStartFrom, int numX,int numY,int *xIndex,int *yIndex)//,
+vector<vector<int>> *createRouteTable(RouteTable_t *pTable, int litStartFrom, int numX, int numY, vector<int> xIndex, vector<int> yIndex) //,
 {
-  vector<vector<int>> * vvClause = new vector<vector<int>>;
+  vector<vector<int>> *vvClause = new vector<vector<int>>;
   //? vector<int> *vectorName = new vector<int>(366, vector<int>(4));
   pTable->nRow = numY;
-  pTable->nCol = 2*numX;
+  pTable->nCol = 2 * numX;
   //_createRouteTable(pTable->ppTable,litStartFrom, pTable->nRow, pTable->nCol);
-  pTable->ppTable = new int*[pTable->nRow];
-  for (int y_ite = 0; y_ite < pTable->nRow; ++y_ite) {
+  pTable->ppTable = new int *[pTable->nRow];
+  for (int y_ite = 0; y_ite < pTable->nRow; ++y_ite)
+  {
     pTable->ppTable[y_ite] = new int[pTable->nCol];
-    for (int x_ite = 0; x_ite < pTable->nCol; ++x_ite) {
-      pTable->ppTable[y_ite][x_ite] = y_ite * pTable->nCol + x_ite + litStartFrom; 
+    for (int x_ite = 0; x_ite < pTable->nCol; ++x_ite)
+    {
+      pTable->ppTable[y_ite][x_ite] = y_ite * pTable->nCol + x_ite + litStartFrom;
 
-      
-      
-      //printf("X[x_ite]: %d Y[y_ite]: %d\n",xIndex[x_ite],yIndex[y_ite]);
+      // printf("X[x_ite]: %d Y[y_ite]: %d\n",xIndex[x_ite],yIndex[y_ite]);
       //* When xIndex[x_ite] is negative, clause is -|x| -|y| which -|x| => -(-x) =>x
       //* and y remains the same
-        vector<int> vClause ;
-        vClause = {-pTable->ppTable[y_ite][x_ite],-xIndex[x_ite],yIndex[y_ite]};
-        //for (int val : vClause) printf("%d ", val);printf("\n");
-        vvClause->push_back(vClause);
+      vector<int> vClause;
+      vClause = {-pTable->ppTable[y_ite][x_ite], -xIndex[x_ite], yIndex[y_ite]};
+      // for (int val : vClause) printf("%d ", val);printf("\n");
+      vvClause->push_back(vClause);
 
-        vClause = {-pTable->ppTable[y_ite][x_ite],xIndex[x_ite],-yIndex[y_ite]};
-        //for (int val : vClause) printf("%d ", val);printf("\n");
-        vvClause->push_back(vClause);
-
-
-
+      vClause = {-pTable->ppTable[y_ite][x_ite], xIndex[x_ite], -yIndex[y_ite]};
+      // for (int val : vClause) printf("%d ", val);printf("\n");
+      vvClause->push_back(vClause);
     }
   }
   return vvClause;
 }
 
-Lit2Obj * collectLitid2Objid(Abc_Ntk_t * pNtk,Cnf_Dat_t * pCnf)
+Lit2Obj *collectLitid2Objid(Abc_Ntk_t *pNtk, Cnf_Dat_t *pCnf)
 {
   Lit2Obj *Lit2Obj_1 = new Lit2Obj;
   Lit2Obj_1->numPi = Abc_NtkPiNum(pNtk);
   Lit2Obj_1->numPo = Abc_NtkPoNum(pNtk);
 
-
   Lit2Obj_1->vec_piLitId.resize(Lit2Obj_1->numPi);
   Lit2Obj_1->vec_piObjId.resize(Lit2Obj_1->numPi);
   Lit2Obj_1->vec_poLitId.resize(Lit2Obj_1->numPo);
   Lit2Obj_1->vec_poObjId.resize(Lit2Obj_1->numPo);
+  Lit2Obj_1->vec_poLitInv.resize(Lit2Obj_1->numPo);
 
-
-  
   Abc_Obj_t *pObj;
   int i;
   Abc_NtkForEachPi(pNtk, pObj, i)
@@ -402,25 +548,27 @@ Lit2Obj * collectLitid2Objid(Abc_Ntk_t * pNtk,Cnf_Dat_t * pCnf)
   }
   Abc_NtkForEachPo(pNtk, pObj, i)
   {
-    
-    //printf("@PO: %d \t",Abc_ObjId(pObj));
-    Abc_Obj_t *pObjTmp = pObj;  
-    int  litId = pCnf->pVarNums[Abc_ObjId(pObjTmp)];
-    
-    while(litId == -1)
+
+    // printf("@PO: %d \t",Abc_ObjId(pObj));
+    Abc_Obj_t *pObjTmp = pObj;
+    int litId = pCnf->pVarNums[Abc_ObjId(pObjTmp)];
+    int inv = 0;
+    while (litId == -1)
     {
+      inv = inv ^ pObjTmp->fCompl0;
+      printf("@%2d \tinv:%d\n", i, pObjTmp->fCompl0);
       pObjTmp = Abc_ObjFanin0(pObjTmp);
-      
       litId = pCnf->pVarNums[Abc_ObjId(pObjTmp)];
-      //printf("Get Fanin ID instead: %d\n",Abc_ObjId(pObjTmp));
+      // printf("Get Fanin ID instead: %d\n",Abc_ObjId(pObjTmp));
     }
 
     Lit2Obj_1->vec_poLitId[i] = litId;
+    Lit2Obj_1->vec_poLitInv[i] = inv;
     Lit2Obj_1->vec_poObjId[i] = Abc_ObjId(pObj);
   }
   return Lit2Obj_1;
 }
-
+/*
 Lit2Obj * collectLitid2Objid(vector<int> *vPis,vector<int> *vPos,Cnf_Dat_t * pCnf)
 {
   Lit2Obj *Lit2Obj_1 = new Lit2Obj;
@@ -434,7 +582,7 @@ Lit2Obj * collectLitid2Objid(vector<int> *vPis,vector<int> *vPos,Cnf_Dat_t * pCn
   Lit2Obj_1->vec_poObjId.resize(Lit2Obj_1->numPo);
 
 
-  
+
   Abc_Obj_t *pObj;
   int i;
   for (size_t i = 0; i < vPis->size(); ++i)
@@ -444,13 +592,15 @@ Lit2Obj * collectLitid2Objid(vector<int> *vPis,vector<int> *vPos,Cnf_Dat_t * pCn
   }
   for (size_t i = 0; i < vPos->size(); ++i)
   {
-    
+
     //printf("@PO: %d \t",Abc_ObjId(pObj));
     int  litId = pCnf->pVarNums[vPos->at(i)];
+    int inv = 0;
     while(litId == -1)
     {
       //Abc_Obj_t *pPoObjFanin = Abc_ObjFanin0(pObj);
-      
+      inv = inv ^ pObjTmp->fCompl0;
+      printf("@%2d \tinv:%d\n",i,pObjTmp->fCompl0);
       litId = pCnf->pVarNums[vPos->at(i)];
       //printf("Get Fanin ID instead: %d\n",Abc_ObjId(pPoObjFanin));
     }
@@ -461,7 +611,7 @@ Lit2Obj * collectLitid2Objid(vector<int> *vPis,vector<int> *vPos,Cnf_Dat_t * pCn
 
   return Lit2Obj_1;
 }
-
+*/
 void printLit2Obj(Lit2Obj *Lit2Obj_1)
 {
   printf("PI Lit ID:\n");
@@ -489,89 +639,127 @@ void printLit2Obj(Lit2Obj *Lit2Obj_1)
   }
   printf("\n");
 }
-int vvWriteToSat(vector<vector<int>> * vvClause, sat_solver * sat)
+int vvWriteToSat(vector<vector<int>> *vvClause, sat_solver *sat, int fBlockAns)
 {
   for (size_t i = 0; i < vvClause->size(); ++i)
   {
-    vector<int> vLitClause ;
+    vector<int> vLitClause;
     for (size_t j = 0; j < vvClause->at(i).size(); ++j)
     {
       int var = abs((vvClause->at(i).at(j)));
-      int sign = vvClause->at(i).at(j) < 0 ? 1 : 0;
-      vLitClause.push_back(Abc_Var2Lit(var,sign));
+      int sign = vvClause->at(i).at(j) < 0 ? 1 ^ fBlockAns : 0 ^ fBlockAns;
+      vLitClause.push_back(Abc_Var2Lit(var, sign));
     }
-    if (!sat_solver_addclause(sat, vLitClause.data(), vLitClause.data()+vLitClause.size()))
+    if (!sat_solver_addclause(sat, vLitClause.data(), vLitClause.data() + vLitClause.size()))
     {
-      
+
       return 0;
     }
   }
   return 1;
 }
-int vWriteToSat(vector<int> vLitClause, sat_solver * sat,int fBlockAns)
+int vWriteToSat(vector<int> vLitClause, sat_solver *sat, int fBlockAns)
 {
   vector<int> vClause_;
   for (size_t i = 0; i < vLitClause.size(); ++i)
   {
     int lit = abs((vLitClause.at(i)));
     int sign = vLitClause.at(i) < 0 ? 1 : 0;
-    vClause_.push_back(Abc_Var2Lit(lit,sign)^ fBlockAns);
+    vClause_.push_back(Abc_Var2Lit(lit, sign) ^ fBlockAns);
   }
-  if (sat_solver_addclause(sat, vClause_.data(), vClause_.data()+vClause_.size()) != 1)
+  if (sat_solver_addclause(sat, vClause_.data(), vClause_.data() + vClause_.size()) != 1)
   {
     return 0;
   }
   return 1;
 }
-int vWriteToSat(vector<int> vVarClause,vector<int> vSign, sat_solver * sat,int fBlockAns)
+int vWriteToSat(vector<int> vVarClause, vector<int> vSign, sat_solver *sat, int fBlockAns)
 {
   vector<int> vClause_;
   for (size_t i = 0; i < vVarClause.size(); ++i)
   {
 
-    vClause_.push_back(Abc_Var2Lit(vVarClause.at(i),vSign.at(i))^ fBlockAns);
+    vClause_.push_back(Abc_Var2Lit(vVarClause.at(i), vSign.at(i)) ^ fBlockAns);
   }
-  if (sat_solver_addclause(sat, vClause_.data(), vClause_.data()+vClause_.size()) != 1)
+  if (sat_solver_addclause(sat, vClause_.data(), vClause_.data() + vClause_.size()) != 1)
   {
     return 0;
   }
   return 1;
-
-/*
-    lit vLit[3] = {
-      Abc_Var2Lit(1, vClause[1] ^ 0),
-      Abc_Var2Lit(2, vClause[2] ^ 0),
-      Abc_Var2Lit(3, vClause[3] ^ 0)};
-    addClauseState = sat_solver_addclause(pSat, vLit, vLit + 3);
- */
-
+}
+int routeTableIndexing(int x, int y, vector<int> *vX, vector<int> *vY)
+{
+  auto itX = find(vX->begin(), vX->end(), x);
+  auto itY = find(vY->begin(), vY->end(), y);
+  int indexX;
+  int indexY;
+  if (itX != vX->end() && itY != vY->end())
+  {
+    indexX = distance(vX->begin(), itX);
+    indexY = distance(vY->begin(), itY);
+  }
+  printf("Index X: %d Index Y: %d\n", indexX, indexY);
+  return -1; // Return -1 if x or y is not found
 }
 
-vector<int>  getSatAnswer(sat_solver * sat,vector<int> *filter)
+vector<int> getSatAnswer(sat_solver *sat, vector<int> *filter)
 {
-  vector<int> vecResult;// = new vector<int>;
+  vector<int> vecResult; // = new vector<int>;
   for (size_t i = 0; i < filter->size(); ++i)
   {
-    //printf("%d ",filter->at(i),sat_solver_var_value(sat, filter->at(i)));
+    // printf("%d ",filter->at(i),sat_solver_var_value(sat, filter->at(i)));
     int lit = filter->at(i);
     int sign = sat_solver_var_value(sat, lit);
-    lit =  sign ? -lit : lit;
-    vecResult.push_back(sign);
+    lit = sign ? lit : -lit;
+    vecResult.push_back(lit);
   }
   return vecResult;
 }
+void supportNodePrint(supportNode *_supportNode)
+{
 
+  printf("Support Node:\n");
+  // printf("  objId: %d\n", _supportNode->headObjId);
+  printf("  cnfId: %d\n", _supportNode->headCnfId);
+  printf("  cnfValue: %d\n", _supportNode->headCnfValue);
+  printf("  nSupport: %d\n", _supportNode->nSupportSize);
+  // printf("  vSupportObjId: ");
+  // for (size_t k = 0; k < _supportNode->vSupportObjId.size(); ++k)
+  //{
+  // printf("%d ", _supportNode->vSupportObjId[k]);
+  // }
+  printf("\n  vSupportCnfId: ");
+  for (size_t k = 0; k < _supportNode->vSupportCnfId.size(); ++k)
+  {
+    printf("%d ", _supportNode->vSupportCnfId[k]);
+  }
+  printf("\n  vSupportCnfValue: ");
+  for (size_t k = 0; k < _supportNode->vSupportCnfValue.size(); ++k)
+  {
+    printf("%d ", _supportNode->vSupportCnfValue[k]);
+  }
+  printf("\n");
+}
+vector<int> RouteTable2Vec(RouteTable *pTable)
+{
+  vector<int> vvConstraint1;
+  for (int i = 0; i < pTable->nRow; ++i)
+  {
+    for (int j = 0; j < pTable->nCol; ++j)
+    {
+      vvConstraint1.push_back(pTable->ppTable[i][j]);
+    }
+  }
+  return vvConstraint1;
+}
 
-
-
-
-
-
-
-
-
-
-
+int cnfCompare(int a, int b)
+{
+  if ((a < 0 && b < 0) || (a > 0 && b > 0))
+    return 1;
+  else
+    return 0;
+}
 
 void Lsv_Ntk_BooleanMatching(int testCase)
 {
@@ -580,26 +768,26 @@ void Lsv_Ntk_BooleanMatching(int testCase)
 
   char groupFilePath[64] = {};
   sprintf(groupFilePath, "release/case%02d/input", testCase);
-  vector<vector<string >> busGroup1Name;
-  vector<vector<string >> busGroup2Name;
+  vector<vector<string>> busGroup1Name;
+  vector<vector<string>> busGroup2Name;
 #ifdef READ_PIPO_GROUP
   map<int, string> busGroup1Map;
   map<int, string> busGroup2Map;
 
-  readBusGroup(groupFilePath,busGroup1Name,busGroup2Name);
+  readBusGroup(groupFilePath, busGroup1Name, busGroup2Name);
 
-  extracBusGroupVector(busGroup1Name,busGroup1Map);
-  extracBusGroupVector(busGroup2Name,busGroup2Map);
-  #endif
+  extracBusGroupVector(busGroup1Name, busGroup1Map);
+  extracBusGroupVector(busGroup2Name, busGroup2Map);
+#endif
   //* Read Circuit file */
 
   char filePath[2][128] = {};
+  Abc_Ntk_t **Abc_Ntk_arr_aig = ABC_ALLOC(Abc_Ntk_t *, 2);
   Abc_Ntk_t **Abc_Ntk_arr = ABC_ALLOC(Abc_Ntk_t *, 2);
-
 
 #if READ_BLIFFILE
   sprintf(filePath[0], "release/case%02d/circuit_1.blif", testCase);
-  sprintf(filePath[1], "release/case%02d/circuit_2.blif", testCase);
+  sprintf(filePath[1], "release/case%02d/circuit_1.blif", testCase);
   Abc_Ntk_arr[0] = Io_ReadBlifAsAig(filePath[0], 1);
   Abc_Ntk_arr[1] = Io_ReadBlifAsAig(filePath[1], 1);
 #else
@@ -610,35 +798,30 @@ void Lsv_Ntk_BooleanMatching(int testCase)
 #endif
 
 
-
+  
   if (!Abc_NtkIsStrash(Abc_Ntk_arr[0]))
     Abc_NtkStrash(Abc_Ntk_arr[0], 1, 0, 1);
   if (!Abc_NtkIsStrash(Abc_Ntk_arr[1]))
     Abc_NtkStrash(Abc_Ntk_arr[1], 1, 0, 1);
-  
+
 
   Abc_Ntk_arr[0]->pName = Extra_UtilStrsav("Circuit1");
   Abc_Ntk_arr[1]->pName = Extra_UtilStrsav("Circuit2");
 
-
   //* Find PI Node ID */
 #ifdef READ_PIPO_GROUP
-  map<int,string> lookupTable1;
-  map<int,string> lookupTable2;
+  map<int, string> lookupTable1;
+  map<int, string> lookupTable2;
 
-  findPiPoNodeId(Abc_Ntk_arr[0],lookupTable1);
-  findPiPoNodeId(Abc_Ntk_arr[1],lookupTable2);
-
-
-
+  findPiPoNodeId(Abc_Ntk_arr[0], lookupTable1);
+  findPiPoNodeId(Abc_Ntk_arr[1], lookupTable2);
 
   //* Match Bus ID and Name */
-  vector<vector<int >> busGroup1Id;
-  vector<vector<int >> busGroup2Id;
+  vector<vector<int>> busGroup1Id;
+  vector<vector<int>> busGroup2Id;
 
-  matchBusIdName(lookupTable1,busGroup1Id,busGroup1Name);
-  matchBusIdName(lookupTable2,busGroup2Id,busGroup2Name);
-
+  matchBusIdName(lookupTable1, busGroup1Id, busGroup1Name);
+  matchBusIdName(lookupTable2, busGroup2Id, busGroup2Name);
 
   busGroup1Name.clear();
   busGroup2Name.clear();
@@ -647,30 +830,72 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   lookupTable1.clear();
   lookupTable2.clear();
 
-
-  //dumpBusGroup(busGroup1Id);
-  //dumpBusGroup(busGroup2Id);
+  // dumpBusGroup(busGroup1Id);
+  // dumpBusGroup(busGroup2Id);
 
   // Measure time of the following process
-  
-  renameObj(Abc_Ntk_arr[1],"ckt2");
-  renameObj(Abc_Ntk_arr[0],"ckt1");
 
-  
-
+  renameObj(Abc_Ntk_arr[1], "ckt2");
+  renameObj(Abc_Ntk_arr[0], "ckt1");
 
   PrintObjName(Abc_Ntk_arr[0]);
   PrintObjName(Abc_Ntk_arr[1]);
-
 
 #endif
 
   Abc_Ntk_t *pNtkCkt1 = Abc_NtkDup(Abc_Ntk_arr[0]);
   Aig_Man_t *pManCkt1 = Abc_NtkToDar(pNtkCkt1, 0, 0);
   Cnf_Dat_t *pCnfCkt1 = Cnf_Derive(pManCkt1, Abc_NtkPoNum(pNtkCkt1));
-  int maxLitCkt1 = pCnfCkt1->nVars;
-  Lit2Obj *Lit2Obj_ckt1 = collectLitid2Objid(pNtkCkt1,pCnfCkt1);
+  //printf("Circuit 1 CNF:\n");
+  //Cnf_DataPrint(pCnfCkt1, 1);
   
+
+ 
+  int maxLitCkt1 = pCnfCkt1->nVars;
+  Lit2Obj *Lit2Obj_ckt1 = collectLitid2Objid(pNtkCkt1, pCnfCkt1);
+
+  vector<supportNode> supportNode_ckt1(Lit2Obj_ckt1->numPo);
+  Vec_Ptr_t *vSupport_ckt1;
+  Abc_Obj_t **pObjArr_ckt1 = new Abc_Obj_t *[1];
+  Abc_Obj_t *pObj_ckt1;
+  int numPo_ckt1 = Abc_NtkPoNum(pNtkCkt1);
+  int i_ckt1;
+
+  Abc_NtkForEachPo(pNtkCkt1, pObj_ckt1, i_ckt1)
+  {
+    pObjArr_ckt1[0] = pObj_ckt1;
+    vSupport_ckt1 = Abc_NtkNodeSupport(pNtkCkt1, pObjArr_ckt1, 1);
+    supportNode_ckt1[i_ckt1].headObjId = Abc_ObjId(pObj_ckt1);
+    for (size_t j = 0; j < Vec_PtrSize(vSupport_ckt1); j++)
+      supportNode_ckt1[i_ckt1].vSupportObjId.push_back(Abc_ObjId((Abc_Obj_t *)Vec_PtrEntry(vSupport_ckt1, j)));
+  }
+  // Find vSupportCnfId by checking Lit2Obj_ckt1
+  for (i_ckt1 = 0; i_ckt1 < numPo_ckt1; ++i_ckt1)
+  {
+    for (size_t j = 0; j < supportNode_ckt1[i_ckt1].vSupportObjId.size(); ++j)
+    {
+      int supportObjId = supportNode_ckt1[i_ckt1].vSupportObjId[j];
+      for (size_t k = 0; k < Lit2Obj_ckt1->vec_piObjId.size(); ++k)
+      {
+        if (Lit2Obj_ckt1->vec_piObjId[k] == supportObjId)
+        {
+          supportNode_ckt1[i_ckt1].vSupportCnfId.push_back(Lit2Obj_ckt1->vec_piLitId[k]);
+          break;
+        }
+      }
+    }
+  }
+  for (i_ckt1 = 0; i_ckt1 < numPo_ckt1; ++i_ckt1)
+  {
+    for (int j = 0; j < Lit2Obj_ckt1->numPi; ++j)
+    {
+      if (Lit2Obj_ckt1->vec_poObjId[j] == supportNode_ckt1[i_ckt1].headObjId)
+      {
+        supportNode_ckt1[i_ckt1].headCnfId = Lit2Obj_ckt1->vec_poLitId[j];
+        break;
+      }
+    }
+  }
 
   Abc_Ntk_t *pNtkCkt2 = Abc_NtkDup(Abc_Ntk_arr[1]);
   Aig_Man_t *pManCkt2 = Abc_NtkToDar(pNtkCkt2, 0, 0);
@@ -678,207 +903,606 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   int maxLitCkt2 = pCnfCkt2->nVars;
   int LiftOffset = LiftSize(maxLitCkt1);
   Cnf_DataLift(pCnfCkt2, LiftOffset);
-  Lit2Obj *Lit2Obj_ckt2 = collectLitid2Objid(pNtkCkt2,pCnfCkt2);
+  Lit2Obj *Lit2Obj_ckt2 = collectLitid2Objid(pNtkCkt2, pCnfCkt2);
 
-  
-  //* Create xIndex and yIndex of PIs */
-  int *ckt1PiArr = new int [Lit2Obj_ckt1->numPi * 2]; 
-  int *ckt2PiArr = new int [Lit2Obj_ckt2->numPi];
+  //printf("Circuit 2 CNF:\n");
+  //Cnf_DataPrint(pCnfCkt1, 1);
 
-  for (int i = 0; i < Lit2Obj_ckt1->numPi; i++){
-    ckt1PiArr[2*i] = Lit2Obj_ckt1->vec_piLitId[i];
-    ckt1PiArr[2*i+1] = -Lit2Obj_ckt1->vec_piLitId[i];
+  vector<supportNode> supportNode_ckt2(Lit2Obj_ckt2->numPo);
+
+  Vec_Ptr_t *vSupport_ckt2;
+  Abc_Obj_t **pObjArr_ckt2 = new Abc_Obj_t *[1];
+  Abc_Obj_t *pObj_ckt2;
+  int numPo_ckt2 = Abc_NtkPoNum(pNtkCkt2);
+  int i_ckt2 = 0;
+
+  Abc_NtkForEachPo(pNtkCkt2, pObj_ckt2, i_ckt2)
+  {
+    pObjArr_ckt2[0] = pObj_ckt2;
+    vSupport_ckt2 = Abc_NtkNodeSupport(pNtkCkt2, pObjArr_ckt2, 1);
+    supportNode_ckt2[i_ckt2].headObjId = Abc_ObjId(pObj_ckt2);
+    for (size_t j = 0; j < Vec_PtrSize(vSupport_ckt2); j++)
+      supportNode_ckt2[i_ckt2].vSupportObjId.push_back(Abc_ObjId((Abc_Obj_t *)Vec_PtrEntry(vSupport_ckt2, j)));
   }
-    
+  // Find vSupportCnfId by checking Lit2Obj_ckt2
+  for (i_ckt2 = 0; i_ckt2 < numPo_ckt2; ++i_ckt2)
+  {
+    for (size_t j = 0; j < supportNode_ckt2[i_ckt2].vSupportObjId.size(); ++j)
+    {
+      int supportObjId = supportNode_ckt2[i_ckt2].vSupportObjId[j];
+      for (size_t k = 0; k < Lit2Obj_ckt2->vec_piObjId.size(); ++k)
+      {
+        if (Lit2Obj_ckt2->vec_piObjId[k] == supportObjId)
+        {
+          supportNode_ckt2[i_ckt2].vSupportCnfId.push_back(Lit2Obj_ckt2->vec_piLitId[k]);
+          break;
+        }
+      }
+    }
+  }
+  for (i_ckt2 = 0; i_ckt2 < numPo_ckt2; ++i_ckt2)
+  {
+    for (int j = 0; j < Lit2Obj_ckt2->numPi; ++j)
+    {
+      if (Lit2Obj_ckt2->vec_poObjId[j] == supportNode_ckt2[i_ckt2].headObjId)
+      {
+        supportNode_ckt2[i_ckt2].headCnfId = Lit2Obj_ckt2->vec_poLitId[j];
+        break;
+      }
+    }
+  }
+
+  //* Create xIndex and yIndex of PIs */
+  vector<int> ckt1PiArr(Lit2Obj_ckt1->numPi * 2);
+  vector<int> ckt2PiArr(Lit2Obj_ckt2->numPi);
+
+  for (int i = 0; i < Lit2Obj_ckt1->numPi; i++)
+  {
+    ckt1PiArr[2 * i] = Lit2Obj_ckt1->vec_piLitId[i];
+    ckt1PiArr[2 * i + 1] = -Lit2Obj_ckt1->vec_piLitId[i];
+  }
+
   for (int i = 0; i < Lit2Obj_ckt2->numPi; i++)
     ckt2PiArr[i] = Lit2Obj_ckt2->vec_piLitId[i];
 
-
-
-
   // * Create PI permutation and negation table */
-  LiftOffset = LiftSize(LiftOffset+maxLitCkt2);
+  LiftOffset = LiftSize(LiftOffset + maxLitCkt2);
   RouteTable *pPiTable = new RouteTable;
   vector<vector<int>> *vvClausePi = createRouteTable(
-    pPiTable,
-    LiftOffset,
-    Lit2Obj_ckt1->numPi,
-    Lit2Obj_ckt2->numPi,
-    ckt1PiArr,
-    ckt2PiArr);
+      pPiTable,
+      LiftOffset,
+      Lit2Obj_ckt1->numPi,
+      Lit2Obj_ckt2->numPi,
+      ckt1PiArr,
+      ckt2PiArr);
 
   printRouteTable(pPiTable, pPiTable->nRow, pPiTable->nCol);
-  
+
   vector<vector<int>> vvPiTableRule;
   vector<vector<int>> vvClausePiRule;
-  createRouteTableRule(pPiTable,&vvPiTableRule);
-  converRouteTable2Clauses(&vvPiTableRule,&vvClausePiRule);
+  createRouteTableRule(pPiTable, &vvPiTableRule);
+  converRouteTable2Clauses(&vvPiTableRule, &vvClausePiRule);
   vvPiTableRule.clear();
 
-
-
-
   //* Create xIndex and yIndex of pos */
-  int *ckt1PoArr = new int [Lit2Obj_ckt1->numPo * 2]; 
-  int *ckt2PoArr = new int [Lit2Obj_ckt2->numPo];
+  // int *ckt1PoArr = new int [Lit2Obj_ckt1->numPo * 2];
+  // int *ckt2PoArr = new int [Lit2Obj_ckt2->numPo];
+  vector<int> ckt1PoArr(Lit2Obj_ckt1->numPo * 2);
+  vector<int> ckt2PoArr(Lit2Obj_ckt2->numPo);
 
-  for (int i = 0; i < Lit2Obj_ckt1->numPo; i++){
-    ckt1PoArr[2*i] = Lit2Obj_ckt1->vec_poLitId[i];
-    ckt1PoArr[2*i+1] = -Lit2Obj_ckt1->vec_poLitId[i];
+  for (int i = 0; i < Lit2Obj_ckt1->numPo; i++)
+  {
+    ckt1PoArr[2 * i] = Lit2Obj_ckt1->vec_poLitId[i];
+    ckt1PoArr[2 * i + 1] = -Lit2Obj_ckt1->vec_poLitId[i];
   }
-    
+
   for (int i = 0; i < Lit2Obj_ckt2->numPo; i++)
     ckt2PoArr[i] = Lit2Obj_ckt2->vec_poLitId[i];
 
-
-
-
   // * Create PO permutation and negation table */
-  LiftOffset = LiftSize(LiftOffset+Lit2Obj_ckt1->numPi*2*Lit2Obj_ckt2->numPi);
+  LiftOffset = LiftSize(LiftOffset + Lit2Obj_ckt1->numPi * 2 * Lit2Obj_ckt2->numPi);
   RouteTable *pPoTable = new RouteTable;
   vector<vector<int>> *vvClausePo = createRouteTable(
-    pPoTable,
-    LiftOffset,
-    Lit2Obj_ckt1->numPo,
-    Lit2Obj_ckt2->numPo,
-    ckt1PoArr,
-    ckt2PoArr);
-  
-  
-  //vvPrint(vvClausePo);
-  //printRouteTable(pPoTable, pPoTable->nRow, pPoTable->nCol);
+      pPoTable,
+      LiftOffset,
+      Lit2Obj_ckt1->numPo,
+      Lit2Obj_ckt2->numPo,
+      ckt1PoArr,
+      ckt2PoArr);
+
+  // vvPrint(vvClausePo);
+  printRouteTable(pPoTable, pPoTable->nRow, pPoTable->nCol);
 
   vector<vector<int>> vvPoTableRule;
   vector<vector<int>> vvClausePoRule;
-  createRouteTableRule(pPoTable,&vvPoTableRule);
-  converRouteTable2Clauses(&vvPoTableRule,&vvClausePoRule);
+  createRouteTableRule(pPoTable, &vvPoTableRule);
+  converRouteTable2Clauses(&vvPoTableRule, &vvClausePoRule);
   vvPoTableRule.clear();
-  
-
 
   Abc_Ntk_t *pNtkMiter = Abc_NtkAlloc(ABC_NTK_LOGIC, ABC_FUNC_AIG, 1);
   vector<int> vMiterNodePiId;
   vector<int> vMiterNodePoId;
 
-
-
-  Cnf_Dat_t *pCnfMiter ;//= createMiterOrCnf(Abc_NtkPiNum(pNtkCkt1),pNtkMiter,&vMiterNodePiId,&vMiterNodePoId);
-
-
+  Cnf_Dat_t *pCnfMiter; //= createMiterOrCnf(Abc_NtkPiNum(pNtkCkt1),pNtkMiter,&vMiterNodePiId,&vMiterNodePoId);
 
   //* Create Miter */
   {
     int nPrimaryInputs = Abc_NtkPiNum(pNtkCkt1);
-    //pNtkMiter = Abc_NtkAlloc(ABC_NTK_LOGIC, ABC_FUNC_AIG, 1);
+    // pNtkMiter = Abc_NtkAlloc(ABC_NTK_LOGIC, ABC_FUNC_AIG, 1);
     pNtkMiter->pName = Extra_UtilStrsav("Miter");
-    Vec_Ptr_t * vNodeXor = Vec_PtrAlloc( nPrimaryInputs );
+    Vec_Ptr_t *vNodeXor = Vec_PtrAlloc(nPrimaryInputs);
     vNodeXor->nSize = nPrimaryInputs;
     int i;
-    for ( i = 0; i < nPrimaryInputs ; i++ )
+    for (i = 0; i < nPrimaryInputs; i++)
     {
-      Vec_Ptr_t * vNodePi = Vec_PtrAlloc(2);
+      Vec_Ptr_t *vNodePi = Vec_PtrAlloc(2);
       vNodePi->nSize = 2;
-      vNodePi->pArray[0] = (void **)Abc_NtkCreatePi( pNtkMiter );
-      vNodePi->pArray[1] = (void **)Abc_NtkCreatePi( pNtkMiter );
+      vNodePi->pArray[0] = (void **)Abc_NtkCreatePi(pNtkMiter);
+      vNodePi->pArray[1] = (void **)Abc_NtkCreatePi(pNtkMiter);
       vMiterNodePiId.push_back(Abc_ObjId((Abc_Obj_t *)vNodePi->pArray[0]));
       vMiterNodePiId.push_back(Abc_ObjId((Abc_Obj_t *)vNodePi->pArray[1]));
-      vNodeXor->pArray[i] = (void **)Abc_NtkCreateNodeExor(pNtkMiter,vNodePi);
+      vNodeXor->pArray[i] = (void **)Abc_NtkCreateNodeExor(pNtkMiter, vNodePi);
     }
-    Abc_Obj_t *pObjOr = Abc_NtkCreateNodeOr(pNtkMiter,vNodeXor);
+    Abc_Obj_t *pObjOr = Abc_NtkCreateNodeOr(pNtkMiter, vNodeXor);
     Abc_Obj_t *pObjPo = Abc_NtkCreatePo(pNtkMiter);
-    
-    Abc_ObjAddFanin(pObjPo,pObjOr);
-    //Vec_PtrFree(vNodeXor);
-    //return 0;
+
+    Abc_ObjAddFanin(pObjPo, pObjOr);
+    // Vec_PtrFree(vNodeXor);
+    // return 0;
     pNtkMiter = Abc_NtkStrash(pNtkMiter, 1, 0, 0);
     Aig_Man_t *pAigMan = Abc_NtkToDar(pNtkMiter, 0, 0);
-    
-    vMiterNodePoId.push_back(Abc_ObjId(Abc_ObjFanin0(pObjPo))) ;
-    pCnfMiter = Cnf_Derive(pAigMan , 1);
+
+    vMiterNodePoId.push_back(Abc_ObjId(Abc_ObjFanin0(pObjPo)));
+    pCnfMiter = Cnf_Derive(pAigMan, 1);
   }
 
-  LiftOffset = LiftSize(LiftOffset+Lit2Obj_ckt1->numPo*2*Lit2Obj_ckt2->numPo);
+  LiftOffset = LiftSize(LiftOffset + Lit2Obj_ckt1->numPo * 2 * Lit2Obj_ckt2->numPo);
   Cnf_DataLift(pCnfMiter, LiftOffset);
-  Lit2Obj *Lit2Obj_Miter =  collectLitid2Objid(pNtkMiter,pCnfMiter);
+  Lit2Obj *Lit2Obj_Miter = collectLitid2Objid(pNtkMiter, pCnfMiter);
 
-
+  LiftOffset = LiftOffset;
   int miterOutLitId = Lit2Obj_Miter->vec_poLitId[0];
-  printf("Miter Out Lit ID: %d\n",miterOutLitId);
+  printf("Miter Out Lit ID: %d\n", miterOutLitId);
 
   sat_solver *pMatchingSat = sat_solver_new();
-  
-  pMatchingSat->verbosity = 2;
+
+  pMatchingSat->verbosity = 0;
   pMatchingSat->fPrintClause = 0;
   int statueInt = 0;
 
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfCkt1, 1, 0);
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfCkt2, 1, 0);
-  statueInt += vvWriteToSat(vvClausePi,pMatchingSat);
-  statueInt += vvWriteToSat(&vvClausePiRule,pMatchingSat);
-  statueInt += vvWriteToSat(vvClausePo,pMatchingSat);
-  statueInt += vvWriteToSat(&vvClausePoRule,pMatchingSat);
+  statueInt += vvWriteToSat(vvClausePi, pMatchingSat, 0);
+  statueInt += vvWriteToSat(&vvClausePiRule, pMatchingSat, 0);
+  statueInt += vvWriteToSat(vvClausePo, pMatchingSat, 0);
+  statueInt += vvWriteToSat(&vvClausePoRule, pMatchingSat, 0);
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfMiter, 1, 0);
-  statueInt += sat_solver_add_const(pMatchingSat,miterOutLitId,0);
-  
+  pMatchingSat->fPrintClause = 0;
 
+  // pMatchingSat->assigns[miterOutLitId] = 0;
+
+  statueInt += sat_solver_add_const(pMatchingSat, miterOutLitId, Lit2Obj_Miter->vec_poLitInv[0]);
+
+  vector<int> piRouteTable1D = RouteTable2Vec(pPiTable);
+  vector<int> poRouteTable1D = RouteTable2Vec(pPoTable);
   vector<int> routeTable1D;
-  routeTable2Vec(pPiTable,&routeTable1D);
-
+  routeTable1D.insert(routeTable1D.end(), piRouteTable1D.begin(), piRouteTable1D.end());
+  routeTable1D.insert(routeTable1D.end(), poRouteTable1D.begin(), poRouteTable1D.end());
 
   int satStatus = 1;
-  int writeClauseStatus = 1;
-  pMatchingSat->fPrintClause = 1;
-  for (size_t i = 0; i < 10 && satStatus == 1 && writeClauseStatus == 1; ++i)
+  int writeClauseStatus = 2;
+  pMatchingSat->fPrintClause = 0;
+  pMatchingSat->random_seed = time(NULL);
+  vector<vector<int>> vvUnsatClause;
+  size_t sat_cnt = 0;
+  for (sat_cnt = 0; sat_cnt < SAT_SOLVE_MAX_ITERATION_SIZE && satStatus == 1 && writeClauseStatus == 2; ++sat_cnt)
   {
+
+
+    printf("SAT Count: %zu\n", sat_cnt);
+    //system("clear");
+    writeClauseStatus = 0;
     satStatus = sat_solver_solve_internal(pMatchingSat);
-    printf("SAT Status: %d\n",satStatus);
-    vector<int> vecAns = getSatAnswer(pMatchingSat,&routeTable1D);
+
+    vector<int> vecSatPiTable = getSatAnswer(pMatchingSat, &piRouteTable1D);
+    vector<int> vecSatPoTable = getSatAnswer(pMatchingSat, &poRouteTable1D);
+    vector<int> vecSatisfyAns = getSatAnswer(pMatchingSat, &routeTable1D);
+    
+    
+
+    /*
+    vector<int> vecAnsIndex;
+    for (int i = 1; i < pMatchingSat->size; ++i)
+    {
+      vecAnsIndex.push_back(i);
+    }
+    vector<int> vecAns = getSatAnswer(pMatchingSat, &vecAnsIndex);
+    */
+#if PRINT_INFO
+    printf("vecAns: ");
     for (size_t i = 0; i < vecAns.size(); ++i)
     {
-      //printf("%d-->%d\n",routeTable1D.at(i),vecAns.at(i));
+      printf("%d ", vecAns[i]);
     }
     printf("\n");
-    writeClauseStatus = vWriteToSat(routeTable1D,vecAns,pMatchingSat,0);
-    printf("Write Clause Status: %d\n",writeClauseStatus);
+
+    printf("Ckt 1 Pi : ");
+    for (size_t i = 0; i < ckt1PiArr.size(); ++i)
+    {
+      printf("%d ", ckt1PiArr[i]);
+    }
+    printf("\n");
+    printf("Ckt 2 Pi : ");
+    for (size_t i = 0; i < ckt2PiArr.size(); ++i)
+    {
+      printf("%d ", ckt2PiArr[i]);
+    }
+    printf("\n");
+    printf("Ckt 1 Po : ");
+    for (size_t i = 0; i < ckt1PoArr.size(); ++i)
+    {
+      printf("%d ", ckt1PoArr[i]);
+    }
+    printf("\n");
+    printf("Ckt 2 Pi : ");
+    for (size_t i = 0; i < ckt2PoArr.size(); ++i)
+    {
+      printf("%d ", ckt2PoArr[i]);
+    }
+    printf("\n");
+#endif
+    // printf("Miter Out: %d\n",vecAnsmiterId[0]);
+    //* writeClauseStatus = vWriteToSat(routeTable1D,vecAns,pMatchingSat,0);
+
+    // supportNode *supportNode_ckt1 = new supportNode[Lit2Obj_ckt1->numPo];
+    // supportNode *supportNode_ckt2 = new supportNode[Lit2Obj_ckt2->numPo];
+
+    //* get support node value of each po in both ckt1 & ckt2
+    for (size_t j = 0; j < Lit2Obj_ckt1->numPo; ++j)
+    {
+      vector<int> vSupportCnfValue = getSatAnswer(pMatchingSat, &supportNode_ckt1[j].vSupportCnfId);
+      supportNode_ckt1[j].vSupportCnfValue = vSupportCnfValue;
+      vector<int> vDummyCnfHead = {supportNode_ckt1[j].headCnfId};
+      vector<int> vHeadCnfValue = getSatAnswer(pMatchingSat, &vDummyCnfHead);
+      supportNode_ckt1[j].headCnfValue = vHeadCnfValue[0];
+    }
+    for (size_t j = 0; j < Lit2Obj_ckt2->numPo; ++j)
+    {
+      vector<int> vSupportCnfValue = getSatAnswer(pMatchingSat, &supportNode_ckt2[j].vSupportCnfId);
+      supportNode_ckt2[j].vSupportCnfValue = vSupportCnfValue;
+      vector<int> vDummyCnfHead = {supportNode_ckt2[j].headCnfId};
+      vector<int> vHeadCnfValue = getSatAnswer(pMatchingSat, &vDummyCnfHead);
+      supportNode_ckt2[j].headCnfValue = vHeadCnfValue[0];
+    }
+
+
+
+    vector<int> vCkt1PiValue = getSatAnswer(pMatchingSat, &Lit2Obj_ckt1->vec_piLitId);
+    vector<int> vCkt2PiValue = getSatAnswer(pMatchingSat, &Lit2Obj_ckt2->vec_piLitId);
+
+    //* convert cnf value to obj value
+
+    map<int,int> vCkt1_Id_Value;
+    map<int,int> vCkt2_Id_Value;
     
-    //Sat_SolverPrintStats(pMatchingSat);
+      for(size_t k = 0; k < Lit2Obj_ckt1->numPi; ++k)
+      {
+        int val = vCkt1PiValue[k]; 
+        int lit = Lit2Obj_ckt1->vec_piLitId[k];
+        int obj = Lit2Obj_ckt1->vec_piObjId[k];
+        //* printf("@1  Lit: %d Val: %d Obj: %d\n",lit,val,obj);
+        vCkt1_Id_Value[obj] = val>0?1:0;
+      }
+      for(size_t k = 0; k < Lit2Obj_ckt2->numPi; ++k)
+      {
+        int val = vCkt2PiValue[k]; 
+        int lit = Lit2Obj_ckt2->vec_piLitId[k];
+        int obj = Lit2Obj_ckt2->vec_piObjId[k];
+        //* printf("@2  Lit: %d Val: %d Obj: %d\n",lit,val,obj);
+        vCkt2_Id_Value[obj] = val>0?1:0;
+      }
+
+
+    //* obj values to pattern values
+    int ckt1_cnt = 0;
+    int ckt2_cnt = 0;
+
+    u_int64_t ckt1Pattern = 0;
+    u_int64_t ckt2Pattern = 0;
+    for (const auto &pair : vCkt1_Id_Value)
+    {
+      int objId = pair.first;
+      int value = pair.second;
+      ckt1Pattern |= (value << (objId - 1));
+    }
+    for (const auto &pair : vCkt2_Id_Value)
+    {
+      int objId = pair.first;
+      int value = pair.second;
+      ckt2Pattern |= (value << (objId - 1));
+    }
+    //* printf("Ckt1 Pattern: %d\n", ckt1Pattern);
+    //* printf("Ckt2 Pattern: %d\n", ckt2Pattern);
+
+    //* simulation
+    std::vector<int> ckt1PartialSetCnfId;
+    std::vector<int> ckt2PartialSetCnfId;
+# if DISABLE_PARTIAL_ASSIGNMENT == 0
+    std::vector<simNode>  ckt1SimNode = simulation_vsimNode(pNtkCkt1, ckt1Pattern);
+    std::vector<simNode>  ckt2SimNode = simulation_vsimNode(pNtkCkt2, ckt2Pattern);
+
+    std::vector<int> *ckt1PartialSetObjId = new std::vector<int>;
+    std::vector<int> *ckt2PartialSetObjId = new std::vector<int>;
+
+
+    
+    
+    Abc_NtkForEachPo(pNtkCkt1, pObj_ckt1, i_ckt1)
+    {
+       partialAssigment(pNtkCkt1,pObj_ckt1 ,ckt1SimNode,ckt1PartialSetObjId);
+    }
+    //Remove duplicates from ckt1PartialSetObjId
+  // Remove duplicates from ckt1PartialSetObjId
+    sort(ckt1PartialSetObjId->begin(), ckt1PartialSetObjId->end());
+    ckt1PartialSetObjId->erase(unique(ckt1PartialSetObjId->begin(), ckt1PartialSetObjId->end()), ckt1PartialSetObjId->end());
+    
+    Abc_NtkForEachPo(pNtkCkt2, pObj_ckt2, i_ckt2)
+    {
+       partialAssigment(pNtkCkt2,pObj_ckt2 ,ckt2SimNode,ckt2PartialSetObjId);
+    }
+    // Remove duplicates from ckt1PartialSetObjId
+    sort(ckt2PartialSetObjId->begin(), ckt2PartialSetObjId->end());
+    ckt2PartialSetObjId->erase(unique(ckt2PartialSetObjId->begin(), ckt2PartialSetObjId->end()), ckt2PartialSetObjId->end());
+
+
+  //* printf("ckt1PartialSetObjId size: %d\n", ckt1PartialSetObjId->size());
+  for(int j = 0; j < ckt1PartialSetObjId->size(); ++j)
+  {
+    //* printf("%d ",ckt1PartialSetObjId->at(j));
   }
+  //* printf("\n");
+  //* printf("ckt2PartialSetObjId size: %d\n", ckt2PartialSetObjId->size());
+  for(int j = 0; j < ckt2PartialSetObjId->size(); ++j)
+  {
+    //* printf("%d ",ckt2PartialSetObjId->at(j));
+  }
+  //* printf("\n");
+
+
   
 
-return;
+
+    for (int objId : *ckt1PartialSetObjId)
+    {
+      for (size_t k = 0; k < Lit2Obj_ckt1->vec_piObjId.size(); ++k)
+      {
+        if (Lit2Obj_ckt1->vec_piObjId[k] == objId)
+        {
+          ckt1PartialSetCnfId.push_back(Lit2Obj_ckt1->vec_piLitId[k]);
+          break;
+        }
+      }
+    }
+
+    for (int objId : *ckt2PartialSetObjId)
+    {
+      for (size_t k = 0; k < Lit2Obj_ckt2->vec_piObjId.size(); ++k)
+      {
+        if (Lit2Obj_ckt2->vec_piObjId[k] == objId)
+        {
+          ckt2PartialSetCnfId.push_back(Lit2Obj_ckt2->vec_piLitId[k]);
+          break;
+        }
+      }
+    }
 
 
-  
 
-  //vvClauseaddClause(vvClause,)
-
-
-  //Cnf_DataPrint(pCnfMiter, 1);
-
-
-
- 
-  //Abc_NtkAppend(Abc_Ntk_arr[0],Abc_Ntk_arr[1],1);
-  //Abc_Ntk_t *pAllMiterNtk = Abc_NtkDup(Abc_Ntk_arr[0]);
-  //Abc_Ntk_t *pAllMiterNtk = Abc_NtkMiter(Abc_Ntk_arr[0], Abc_Ntk_arr[1], 1, 0, 0, 0);
-  //pAllMiterNtk = Abc_NtkStrash(pAllMiterNtk, 0, 0, 0);
-  //Nm_ManCreateUniqueName(pNtk1->pManName, Abc_ObjId(pNtk1));
-  
-  
-  //Cnf_Dat_t *pMiterCnf = Cnf_Derive(pAigManMiter, Abc_NtkPoNum(pAllMiterNtk));
-  //sat_solver *pMiterSat = sat_solver_new();
-  //Cnf_DataWriteIntoSolverInt(pMiterSat, pMiterCnf, 1, 0);
+#endif
 
 
 
 
+#if PRINT_INFO
+    for (size_t j = 0; j < Lit2Obj_ckt1->numPo; ++j)
+      supportNodePrint(&supportNode_ckt1[j]);
+    for (size_t j = 0; j < Lit2Obj_ckt1->numPo; ++j)
+      supportNodePrint(&supportNode_ckt2[j]);
+#endif
 
-  //Abc_NtkAppend(Abc_Ntk_arr[0],Abc_Ntk_arr[1],1);
-  
-  //Abc_NtkShow(pNtk0, 0, 0, 0, 0, 0);
-  //Abc_NtkShow(Abc_Ntk_arr[0], 0, 0, 0, 0, 0);
+    //* supportNode_ckt2 ==> g
+    //* supportNode_ckt1 ==> f
+
+    vector<vector<int>> vvLearnClause;
+    for (size_t k = 0; k < supportNode_ckt1.size(); k++)
+    {
+      for (size_t l = 0; l < supportNode_ckt2.size(); l++)
+      {
+        //* clause create here
+        vector<int> vLearnClause;
+        int c_kl = pPoTable->ppTable[l][2 * k];
+        int d_kl = pPoTable->ppTable[l][2 * k + 1];
+        if (!cnfCompare(supportNode_ckt1[k].headCnfValue, supportNode_ckt2[l].headCnfValue))
+        {
+           vLearnClause.push_back(-c_kl);
+          //* vLearnClause.push_back(d_kl);
+        }
+        else
+        {
+          vLearnClause.push_back(-d_kl);
+          //* vLearnClause.push_back(c_kl);
+
+        }
+
+        //* v
+        for (size_t j = 0; j < supportNode_ckt2[l].vSupportCnfId.size(); j++)
+        {
+          //* u
+          for (size_t i = 0; i < supportNode_ckt1[k].vSupportCnfId.size(); i++)
+          {
+            int u = supportNode_ckt1[k].vSupportCnfValue[i];
+            int v = supportNode_ckt2[l].vSupportCnfValue[j];
+            // printf("Compare u:%d v:%d    ==> %d\n",u,v,cnfCompare(u,v));
 
 
+            if (((find(ckt1PartialSetCnfId.begin(),ckt1PartialSetCnfId.end(), abs(u))!= ckt1PartialSetCnfId.end()) 
+                && 
+                (find(ckt2PartialSetCnfId.begin(), ckt2PartialSetCnfId.end(), abs(v))!= ckt2PartialSetCnfId.end())) 
+                || DISABLE_PARTIAL_ASSIGNMENT)
+            {
+              if (!cnfCompare(u, v))
+              {
+                 //* printf("A_%d%d\n",j,i);
+                vLearnClause.push_back(pPiTable->ppTable[j][2 * i ]);
+              }
+              else
+              {
+                 //* printf("B_%d%d\n",j,i);
+                vLearnClause.push_back(pPiTable->ppTable[j][2 * i + 1]);
+              }
+            }else
+            {
+              //* printf("_|_\n");
+            }
+
+
+            
+
+          }
+        }
+
+        /*
+        printf("vLearnClause: ");
+        for (size_t i = 0; i < vLearnClause.size(); ++i)
+        {
+          printf("%d ", vLearnClause[i]);
+        }
+        printf("\n");
+*/
+        #if DISABLE_PARTIAL_ASSIGNMENT == 0 && 0
+        printf("ckt1PartialSetCnfId: ");
+        for (size_t i = 0; i < ckt1PartialSetCnfId.size(); ++i)
+        {
+          printf("%d ", ckt1PartialSetCnfId[i]);
+        }
+        printf("\n");
+        printf("ckt2PartialSetCnfId: ");
+        for (size_t i = 0; i < ckt2PartialSetCnfId.size(); ++i)
+        {
+          printf("%d ", ckt2PartialSetCnfId[i]);
+        }
+        printf("\n");
+        #endif
+
+#if ENABLE_LEARNING
+        vvUnsatClause.push_back(vLearnClause);
+#endif
+        vvLearnClause.push_back(vLearnClause);
+      }
+    }
+
+#if ENABLE_LEARNING
+    writeClauseStatus += vvWriteToSat(&vvLearnClause, pMatchingSat, 0);
+#else
+    writeClauseStatus++;
+    vvUnsatClause.push_back(vecBlockAns(&vecSatisfyAns));
+#endif
+    // * 
+    // * vvUnsatClause.push_back(vecBlockAns(&vecSatisfyAns));
+    // *writeClauseStatus++;
+    writeClauseStatus += vWriteToSat(vecSatisfyAns, pMatchingSat, 1);
+  }
+  printf("SAT Status: %d\n", satStatus);
+  printf("Write Clause Status: %d\n", writeClauseStatus);
+  printf("SAT Count: %d\n", sat_cnt);
+  sat_solver_delete(pMatchingSat);
+
+  //=======================================================================================================
+  //
+  //                      New SAT Solver for the second part
+  //
+  //=======================================================================================================
+
+  sat_solver *pMatchingSat_2 = sat_solver_new();
+  pMatchingSat_2->verbosity = 2;
+  pMatchingSat_2->fPrintClause = 0;
+  statueInt = 0;
+
+  Cnf_DataWriteIntoSolverInt(pMatchingSat_2, pCnfCkt1, 1, 0);
+  Cnf_DataWriteIntoSolverInt(pMatchingSat_2, pCnfCkt2, 1, 0);
+  statueInt += vvWriteToSat(vvClausePi, pMatchingSat_2, 0);
+  statueInt += vvWriteToSat(&vvClausePiRule, pMatchingSat_2, 0);
+  statueInt += vvWriteToSat(vvClausePo, pMatchingSat_2, 0);
+  statueInt += vvWriteToSat(&vvClausePoRule, pMatchingSat_2, 0);
+  statueInt += vvWriteToSat(&vvUnsatClause, pMatchingSat_2, 0);
+  Cnf_DataWriteIntoSolverInt(pMatchingSat_2, pCnfMiter, 1, 0);
+  pMatchingSat_2->fPrintClause = 0;
+
+  // printf("Valid Case\n\n\n\n");
+
+  satStatus = sat_solver_solve_internal(pMatchingSat_2);
+  vector<int> vecSatPiTable = getSatAnswer(pMatchingSat_2, &piRouteTable1D);
+  vector<int> vecSatPoTable = getSatAnswer(pMatchingSat_2, &poRouteTable1D);
+
+  {
+    printRouteTable(pPoTable, pPoTable->nRow, pPoTable->nCol);
+    printRouteTable(pPiTable, pPiTable->nRow, pPiTable->nCol);
+    //* printf("vecSatPoTable: \n");
+    for (size_t i = 0; i < vecSatPoTable.size(); ++i)
+    {
+      if (vecSatPoTable[i] > 0 || 0 )
+      {
+        //* printf("%d ", vecSatPoTable[i]);
+        sat_solver_add_const(pMatchingSat_2, vecSatPoTable[i], 0);
+      }
+    }
+    //* printf("\n");
+    //* printf("vecSatPiTable: \n");
+    for (size_t i = 0; i < vecSatPiTable.size(); ++i)
+    {
+      if (vecSatPiTable[i] > 0 || 0)
+      {
+        //* printf("%d ", vecSatPiTable[i]);
+        sat_solver_add_const(pMatchingSat_2, vecSatPiTable[i], 0);
+      }
+    }
+    //* printf("\n");
+  }
+
+  sat_solver_solve_internal(pMatchingSat_2);
+
+  vector<int> vecAnsIndex;
+  for (int i = 1; i < pMatchingSat_2->size; ++i)
+  {
+    vecAnsIndex.push_back(i);
+  }
+  vector<int> vecAns = getSatAnswer(pMatchingSat_2, &vecAnsIndex);
+  //* printf("vecAns: ");
+  for (size_t i = 0; i < vecAns.size(); ++i)
+  {
+    if(vecAns[i] > 0)
+     printf("%d ", vecAns[i]);
+  }
+  return;
+
+  // vvClauseaddClause(vvClause,)
+
+  // Cnf_DataPrint(pCnfMiter, 1);
+
+  // Abc_NtkAppend(Abc_Ntk_arr[0],Abc_Ntk_arr[1],1);
+  // Abc_Ntk_t *pAllMiterNtk = Abc_NtkDup(Abc_Ntk_arr[0]);
+  // Abc_Ntk_t *pAllMiterNtk = Abc_NtkMiter(Abc_Ntk_arr[0], Abc_Ntk_arr[1], 1, 0, 0, 0);
+  // pAllMiterNtk = Abc_NtkStrash(pAllMiterNtk, 0, 0, 0);
+  // Nm_ManCreateUniqueName(pNtk1->pManName, Abc_ObjId(pNtk1));
+
+  // Cnf_Dat_t *pMiterCnf = Cnf_Derive(pAigManMiter, Abc_NtkPoNum(pAllMiterNtk));
+  // sat_solver *pMiterSat = sat_solver_new();
+  // Cnf_DataWriteIntoSolverInt(pMiterSat, pMiterCnf, 1, 0);
+
+  // Abc_NtkAppend(Abc_Ntk_arr[0],Abc_Ntk_arr[1],1);
+
+  // Abc_NtkShow(pNtk0, 0, 0, 0, 0, 0);
+  // Abc_NtkShow(Abc_Ntk_arr[0], 0, 0, 0, 0, 0);
 
   return;
 }
@@ -908,7 +1532,7 @@ int Lsv_Command_BooleanMatching(Abc_Frame_t *pAbc, int argc, char **argv)
   }
   else
   {
-    printf("Please type number of case 1 ~ 10 \n");
+    printf("Please type number of case 0 ~ 10 \n");
     return 0;
   }
   argv_num = atoi(argv[1]);

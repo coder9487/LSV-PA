@@ -45,13 +45,14 @@ void Lsv_NtkLab(Abc_Ntk_t *pNtk)
   {
     satState = sat_solver_solve_internal(pSat);
     vector<int> vClause;
+
+    
     printf("sat_solver_nvars:%d\n",sat_solver_nvars(pSat));
     for (int i = 0; i <= sat_solver_nvars(pSat) -1; i++)
     {
       vClause.push_back(sat_solver_var_value(pSat, i));
       printf("%d--->%d \n",i, sat_solver_var_value(pSat, i));
     }
-
     printf("\n");
 
     lit vLit[3] = {

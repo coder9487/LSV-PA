@@ -1,0 +1,75 @@
+# Benchmark "top_n16" written by ABC on Mon Dec 23 22:01:54 2024
+.model top_n16
+.inputs n1 n4 n5 n11 n19 n24 n35 n39 n45 n46 n48 n49
+.outputs n16
+.names n1 n45 new_n14
+11 1
+00 1
+.names n48 n35 new_n15
+11 1
+.names n24 n39 new_n16_1
+11 1
+.names n48 n35 new_n17
+00 1
+.names new_n16_1 new_n17 new_n18
+10 1
+.names new_n15 new_n18 new_n19_1
+1- 1
+-1 1
+.names new_n14 new_n19_1 new_n20
+10 1
+01 1
+.names new_n20 n19 new_n21
+1- 1
+-0 1
+.names n24 n39 new_n22
+11 1
+00 1
+.names n46 new_n22 new_n23
+10 1
+.names n11 new_n24_1
+0 1
+.names new_n23 new_n24_1 new_n25
+10 1
+.names n48 n35 new_n26
+11 1
+00 1
+.names new_n26 new_n16_1 new_n27
+11 1
+00 1
+.names new_n24_1 new_n23 new_n28
+10 1
+.names new_n27 new_n28 new_n29
+10 1
+.names new_n25 new_n29 new_n30
+1- 1
+-1 1
+.names new_n20 n19 new_n31
+10 1
+.names new_n30 new_n31 new_n32
+10 1
+.names new_n21 new_n32 new_n33
+10 1
+.names n4 n5 new_n34
+11 1
+00 1
+.names new_n33 new_n34 new_n35_1
+10 1
+01 1
+.names n1 n45 new_n36
+00 1
+.names new_n19_1 new_n36 new_n37
+10 1
+.names n1 n45 new_n38
+0- 1
+-0 1
+.names new_n37 new_n38 new_n39_1
+1- 1
+-0 1
+.names new_n39_1 n49 new_n40
+10 1
+01 1
+.names new_n35_1 new_n40 n16
+10 1
+01 1
+.end

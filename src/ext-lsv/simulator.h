@@ -9,11 +9,7 @@ typedef struct simCareNode
 }simCareNode;
 
 
-typedef struct simnode
-{
-  simCareNode *p;
-  int8_t nodeValue;
-}simNode;
+
 
 
 
@@ -40,7 +36,12 @@ struct my_aig_node_
 
 
 
-
+typedef struct simnode
+{
+  simCareNode *p;
+  int8_t nodeValue;
+  int8_t traversed;
+}simNode;
 
 
 int Simulation(Abc_Ntk_t *pNtk, u_int64_t patterns)

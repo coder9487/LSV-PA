@@ -23,7 +23,7 @@
 #define SAT_SOLVE_MAX_ITERATION_SIZE 99999999
 #define ENABLE_LEARNING 1
 #define DISABLE_PARTIAL_ASSIGNMENT 0
-#define PRINT_INFO 1
+#define PRINT_INFO 0
 #define PRINT_CNF_INFO 0
 
 using namespace std;
@@ -242,8 +242,10 @@ typedef struct LIT2OBJ
   int numPi;
   int numPo;
   vector<int> vec_piObjId;
+  vector<Abc_Obj_t *> vec_piObj;
   vector<int> vec_piLitId;
   vector<int> vec_poObjId;
+  vector<Abc_Obj_t *> vec_poObj;
   vector<int> vec_poLitId;
   vector<int> vec_poLitInv;
 } Lit2Obj;
@@ -518,6 +520,8 @@ Lit2Obj *collectLitid2Objid(Abc_Ntk_t *pNtk, Cnf_Dat_t *pCnf)
   Lit2Obj_1->numPi = Abc_NtkPiNum(pNtk);
   Lit2Obj_1->numPo = Abc_NtkPoNum(pNtk);
 
+  Lit2Obj_1->vec_piObj.resize(Lit2Obj_1->numPi);
+  Lit2Obj_1->vec_poObj.resize(Lit2Obj_1->numPo);
   Lit2Obj_1->vec_piLitId.resize(Lit2Obj_1->numPi);
   Lit2Obj_1->vec_piObjId.resize(Lit2Obj_1->numPi);
   Lit2Obj_1->vec_poLitId.resize(Lit2Obj_1->numPo);
@@ -530,6 +534,7 @@ Lit2Obj *collectLitid2Objid(Abc_Ntk_t *pNtk, Cnf_Dat_t *pCnf)
   {
     Lit2Obj_1->vec_piLitId[i] = pCnf->pVarNums[Abc_ObjId(pObj)];
     Lit2Obj_1->vec_piObjId[i] = Abc_ObjId(pObj);
+    Lit2Obj_1->vec_piObj[i] = pObj;
   }
   Abc_NtkForEachPo(pNtk, pObj, i)
   {
@@ -550,6 +555,7 @@ Lit2Obj *collectLitid2Objid(Abc_Ntk_t *pNtk, Cnf_Dat_t *pCnf)
     Lit2Obj_1->vec_poLitId[i] = litId;
     Lit2Obj_1->vec_poLitInv[i] = inv;
     Lit2Obj_1->vec_poObjId[i] = Abc_ObjId(pObj);
+    Lit2Obj_1->vec_poObj[i] = pObj;
   }
   return Lit2Obj_1;
 }
@@ -843,7 +849,7 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   int numPo_ckt1 = Abc_NtkPoNum(pNtkCkt1);
   int i_ckt1;
 
-#ifdef PRINT_CNF_INFO
+#if PRINT_CNF_INFO
   printf("MaxLit ckt1: %d\n",maxLitCkt1);
   printf("Circuit 1 CNF:\n");
   Cnf_DataPrint(pCnfCkt1, 1);
@@ -911,7 +917,7 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   Cnf_DataLift(pCnfCkt2, LiftOffset);
   Lit2Obj *Lit2Obj_ckt2 = collectLitid2Objid(pNtkCkt2, pCnfCkt2);
 
-#ifdef PRINT_CNF_INFO
+#if PRINT_CNF_INFO
   printf("MaxLit ckt2: %d\n",maxLitCkt2);
   printf("Circuit 2 CNF:\n");
   Cnf_DataPrint(pCnfCkt2, 1);
@@ -1068,7 +1074,7 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   LiftOffset = LiftSize(LiftOffset + Lit2Obj_ckt1->numPi * 2 * Lit2Obj_ckt2->numPi);
   Cnf_DataLift(pCnfMiter, LiftOffset);
   Lit2Obj *Lit2Obj_Miter = collectLitid2Objid(pNtkMiter, pCnfMiter);
-  #ifdef PRINT_CNF_INFO
+  #if PRINT_CNF_INFO
   printf("MaxLit miter: %d\n",pCnfMiter->nVars);
   printf("Miter CNF:\n");
   Cnf_DataPrint(pCnfMiter, 1);
@@ -1201,7 +1207,7 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   statueInt += vvWriteToSat(vvClausePo, pMatchingSat, 0);
   statueInt += vvWriteToSat(&vvClausePoRule, pMatchingSat, 0);
   Cnf_DataWriteIntoSolverInt(pMatchingSat, pCnfMiter, 1, 0);
-  pMatchingSat->fPrintClause = 1;
+  pMatchingSat->fPrintClause = 0;
 
   // pMatchingSat->assigns[miterOutLitId] = 0;
 
@@ -1246,7 +1252,9 @@ void Lsv_Ntk_BooleanMatching(int testCase)
   {
 
 
+  #if PRINT_SAT_STATUS
     printf("SAT Count: %zu\n", sat_cnt);
+  #endif 
     //system("clear");
     writeClauseStatus = 0;
     satStatus = sat_solver_solve_internal(pMatchingSat);
@@ -1608,10 +1616,12 @@ if(1)
     //* vvUnsatClause.push_back(vecBlockAns(&vecSatisfyAns));
     writeClauseStatus += vWriteToSat(vecSatisfyAns, pMatchingSat, 1);
   }
+  #if PRINT_SAT_STATUS
   printf("Sat solver stop!\n");
   printf("SAT Status: %d\n", satStatus);
   printf("Write Clause Status: %d\n", writeClauseStatus);
   printf("SAT Count: %d\n", sat_cnt);
+  #endif
   //sat_solver_delete(pMatchingSat);
 
   //=======================================================================================================
@@ -1648,7 +1658,7 @@ if(1)
   vector<int> vecSatPoTable = getSatAnswer(pMatchingSat_2, &poRouteTable1D);
   
 
-  printf("SAT Status: %d\n", satStatus);
+  //printf("SAT Status: %d\n", satStatus);
 
   
     printRouteTable(pPoTable, pPoTable->nRow, pPoTable->nCol);
@@ -1661,7 +1671,7 @@ if(1)
 
       if (vecSatPoTable[i] > 0 )
       {
-        printf("%d ", vecSatPoTable[i]);
+        //* printf("%d ", vecSatPoTable[i]);
         posAnsCnt++;
         sat_solver_add_const(pMatchingSat_2, vecSatPoTable[i], 0);
       }
@@ -1672,7 +1682,7 @@ if(1)
     {
       if (vecSatPiTable[i] > 0 )
       {
-        printf("%d ", vecSatPiTable[i]);
+        //* printf("%d ", vecSatPiTable[i]);
         posAnsCnt++;
         sat_solver_add_const(pMatchingSat_2, vecSatPiTable[i], 0);
       }
@@ -1698,7 +1708,7 @@ if(posAnsCnt == 0)
   vector<int> vecAns = getSatAnswer(pMatchingSat_2, &vecAnsIndex);
   if(sat2statue == 1)
   {  
-    printf("Final Satisfy Ans In CNF: \n");
+    //printf("Final Satisfy Ans In CNF: \n");
     for (size_t i = 0; i < vecAns.size(); ++i)
     {
       if(vecAns[i] > 0)
@@ -1709,11 +1719,34 @@ if(posAnsCnt == 0)
           {
             if (pPoTable->ppTable[j][k] == vecAns[i])
             {
-              printf("pPoTable[%d][%d] = %d ", j, k, vecAns[i]);
-                
-               //Lit2Obj_ckt2->vec_poObjId ckt2PoArr[k]
+              //printf("pPoTable[%d][%d] = %d ", j, k, vecAns[i]);
+              //printf("{ckt1:%d,ckt2:%d}\n",miterFanin1Arr[j],ckt2PoArr[k]);
 
-              printf("{ckt1:%d,ckt2:%d}\n",miterFanin1Arr[j],ckt2PoArr[k]);
+              Abc_Obj_t * Abc_ckt1Obj;
+              Abc_Obj_t * Abc_ckt2Obj;
+              int negation = 0;
+              for(size_t l = 0; l < Lit2Obj_Miter->numPi; ++l)
+              {
+                if(Lit2Obj_Miter->vec_piLitId[l] == miterFanin1Arr[j])
+                {
+                  Abc_ckt1Obj = Lit2Obj_ckt1->vec_poObj[l>>1];
+                  if(k % 2 == 1)
+                    negation = 1;
+                  break;
+                }
+              }
+              for(size_t l = 0; l < Lit2Obj_ckt2->numPo; ++l)
+              {
+                if(Lit2Obj_ckt2->vec_poLitId[l] == ckt2PoArr[k])
+                {
+                  Abc_ckt2Obj = Lit2Obj_ckt2->vec_poObj[l];
+                  break;
+                }
+              }
+              if(negation)
+                printf("{ckt1:%5s,negtion ckt2:%5s}\n",Abc_ObjName(Abc_ckt1Obj),Abc_ObjName(Abc_ckt2Obj));
+              else
+                printf("{ckt1:%5s,ckt2:%5s}\n",Abc_ObjName(Abc_ckt1Obj),Abc_ObjName(Abc_ckt2Obj));
               break;
                 
               
@@ -1726,12 +1759,33 @@ if(posAnsCnt == 0)
           {
             if (pPiTable->ppTable[j][k] == vecAns[i])
             {
-              printf("pPiTable[%d][%d] = %d ", j, k, vecAns[i]);
-
-               //Lit2Obj_ckt2->vec_poObjId ckt2PoArr[k]
-                
-              printf("{ckt1:%d,ckt2:%d}\n",ckt1PiArr[k],ckt2PiArr[j]);
-              b();
+              //printf("pPiTable[%d][%d] = %d ", j, k, vecAns[i]);
+              Abc_Obj_t * Abc_ckt1Obj;
+              Abc_Obj_t * Abc_ckt2Obj;
+              int negation = 0;
+              for(size_t l = 0; l < Lit2Obj_ckt1->numPi; ++l)
+              {
+                if(Lit2Obj_ckt1->vec_piLitId[l] == ckt1PiArr[k])
+                {
+                  Abc_ckt1Obj = Lit2Obj_ckt1->vec_piObj[l];
+                  if(k % 2 == 1)
+                    negation = 1;
+                  break;
+                }
+              }
+              for(size_t l = 0; l < Lit2Obj_ckt2->numPi; ++l)
+              {
+                if(Lit2Obj_ckt2->vec_piLitId[l] == ckt2PiArr[j])
+                {
+                  Abc_ckt2Obj = Lit2Obj_ckt2->vec_piObj[l];
+                  break;
+                }
+              }
+              if(negation)
+                printf("{ckt1:%5s,negtion ckt2:%5s}\n",Abc_ObjName(Abc_ckt1Obj),Abc_ObjName(Abc_ckt2Obj));
+              else
+                printf("{ckt1:%5s,ckt2:%5s}\n",Abc_ObjName(Abc_ckt1Obj),Abc_ObjName(Abc_ckt2Obj));
+              break;
             }
           }
         }
